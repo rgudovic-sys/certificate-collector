@@ -6,11 +6,20 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+engine = None
+SessionLocal = None
 
-engine = create_engine(DATABASE_URL) if DATABASE_URL else None
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
+if DATABASE_URL:
+    try:
+        if DATABASE_URL.startswith("postgres://"):
+            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    except Exception as e:
+        print(f"Database connection error: {e}")
+        engine = None
+        SessionLocal = None
+
 Base = declarative_base()
 
 class CertificateScan(Base):
@@ -31,7 +40,8 @@ class CertificateScan(Base):
 
 def get_db():
     if not SessionLocal:
-        return None
+        yield None
+        return
     db = SessionLocal()
     try:
         yield db
@@ -40,4 +50,7 @@ def get_db():
 
 def init_db():
     if engine:
-        Base.metadata.create_all(bind=engine)
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as e:
+            print(f"Init DB error: {e}")
