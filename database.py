@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
+import urllib.parse
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -13,7 +14,17 @@ if DATABASE_URL:
     try:
         if DATABASE_URL.startswith("postgres://"):
             DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_timeout=5)
+        
+        parsed = urllib.parse.urlparse(DATABASE_URL)
+        password = parsed.password or ""
+        
+        if password and not password.startswith("%"):
+            encoded_password = urllib.parse.quote(password, safe='')
+            new_url = DATABASE_URL.replace(f":{password}@", f":{encoded_password}@")
+            engine = create_engine(new_url, pool_pre_ping=True, pool_timeout=5)
+        else:
+            engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_timeout=5)
+        
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
         print(f"Database connection error: {type(e).__name__}: {e}")
