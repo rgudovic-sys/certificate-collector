@@ -13,7 +13,7 @@ if DATABASE_URL:
     try:
         if DATABASE_URL.startswith("postgres://"):
             DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+        engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_timeout=5)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
         print(f"Database connection error: {type(e).__name__}: {e}")
@@ -56,9 +56,4 @@ def get_db():
 
 def init_db():
     if engine:
-        try:
-            Base.metadata.create_all(bind=engine)
-        except Exception as e:
-            print(f"Init DB error: {type(e).__name__}: {e}")
-    else:
-        print(f"Init DB: no engine (DATABASE_URL={'set' if os.getenv('DATABASE_URL') else 'not set'})")
+        Base.metadata.create_all(bind=engine)

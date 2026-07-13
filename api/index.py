@@ -7,13 +7,17 @@ from datetime import datetime
 from cryptography import x509
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from database import get_db, init_db, CertificateScan
+from database import get_db, init_db, CertificateScan, engine
 
 app = FastAPI(title="Certificate Collector")
 
 @app.on_event("startup")
 def startup():
-    init_db()
+    if engine:
+        try:
+            init_db()
+        except Exception as e:
+            print(f"Startup DB init failed: {e}")
 
 class HostnameRequest(BaseModel):
     hostnames: List[str]
@@ -109,36 +113,51 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
             cert_info = collect_certificate(hostname, request.port)
             
             if db:
-                db_scan = CertificateScan(
-                    hostname=cert_info.hostname,
-                    port=cert_info.port,
-                    subject=cert_info.subject,
-                    issuer=cert_info.issuer,
-                    serial_number=cert_info.serial_number,
-                    not_before=cert_info.not_before,
-                    not_after=cert_info.not_after,
-                    san=cert_info.san,
-                    key_info=cert_info.key_info,
-                    error=cert_info.error
-                )
-                db.add(db_scan)
-                db.commit()
-                db.refresh(db_scan)
-                
-                results.append(ScanResponse(
-                    id=db_scan.id,
-                    hostname=db_scan.hostname,
-                    port=db_scan.port,
-                    subject=db_scan.subject,
-                    issuer=db_scan.issuer,
-                    serial_number=db_scan.serial_number,
-                    not_before=db_scan.not_before,
-                    not_after=db_scan.not_after,
-                    san=db_scan.san,
-                    key_info=db_scan.key_info,
-                    error=db_scan.error,
-                    scanned_at=db_scan.scanned_at
-                ))
+                try:
+                    db_scan = CertificateScan(
+                        hostname=cert_info.hostname,
+                        port=cert_info.port,
+                        subject=cert_info.subject,
+                        issuer=cert_info.issuer,
+                        serial_number=cert_info.serial_number,
+                        not_before=cert_info.not_before,
+                        not_after=cert_info.not_after,
+                        san=cert_info.san,
+                        key_info=cert_info.key_info,
+                        error=cert_info.error
+                    )
+                    db.add(db_scan)
+                    db.commit()
+                    db.refresh(db_scan)
+                    
+                    results.append(ScanResponse(
+                        id=db_scan.id,
+                        hostname=db_scan.hostname,
+                        port=db_scan.port,
+                        subject=db_scan.subject,
+                        issuer=db_scan.issuer,
+                        serial_number=db_scan.serial_number,
+                        not_before=db_scan.not_before,
+                        not_after=db_scan.not_after,
+                        san=db_scan.san,
+                        key_info=db_scan.key_info,
+                        error=db_scan.error,
+                        scanned_at=db_scan.scanned_at
+                    ))
+                except Exception as e:
+                    print(f"DB save error: {e}")
+                    results.append(CertificateInfo(
+                        hostname=cert_info.hostname,
+                        port=cert_info.port,
+                        subject=cert_info.subject,
+                        issuer=cert_info.issuer,
+                        serial_number=cert_info.serial_number,
+                        not_before=cert_info.not_before,
+                        not_after=cert_info.not_after,
+                        san=cert_info.san,
+                        key_info=cert_info.key_info,
+                        error=cert_info.error
+                    ))
             else:
                 results.append(CertificateInfo(
                     hostname=cert_info.hostname,
@@ -159,35 +178,40 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
 def get_history(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
     if not db:
         return {"scans": []}
-    scans = db.query(CertificateScan).order_by(CertificateScan.scanned_at.desc()).offset(skip).limit(limit).all()
-    return {"scans": [
-        ScanResponse(
-            id=s.id,
-            hostname=s.hostname,
-            port=s.port,
-            subject=s.subject,
-            issuer=s.issuer,
-            serial_number=s.serial_number,
-            not_before=s.not_before,
-            not_after=s.not_after,
-            san=s.san,
-            key_info=s.key_info,
-            error=s.error,
-            scanned_at=s.scanned_at
-        ) for s in scans
-    ]}
+    try:
+        scans = db.query(CertificateScan).order_by(CertificateScan.scanned_at.desc()).offset(skip).limit(limit).all()
+        return {"scans": [
+            ScanResponse(
+                id=s.id,
+                hostname=s.hostname,
+                port=s.port,
+                subject=s.subject,
+                issuer=s.issuer,
+                serial_number=s.serial_number,
+                not_before=s.not_before,
+                not_after=s.not_after,
+                san=s.san,
+                key_info=s.key_info,
+                error=s.error,
+                scanned_at=s.scanned_at
+            ) for s in scans
+        ]}
+    except Exception as e:
+        print(f"History query error: {e}")
+        return {"scans": []}
 
 @app.delete("/api/history/{scan_id}")
 def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     if not db:
         return {"status": "no database"}
-    db.query(CertificateScan).filter(CertificateScan.id == scan_id).delete()
-    db.commit()
-    return {"status": "deleted"}
+    try:
+        db.query(CertificateScan).filter(CertificateScan.id == scan_id).delete()
+        db.commit()
+        return {"status": "deleted"}
+    except Exception as e:
+        return {"status": f"error: {e}"}
 
 @app.get("/", response_class=HTMLResponse)
 def get_ui():
     with open("index.html", "r") as f:
         return HTMLResponse(content=f.read())
-
-
