@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, JSON
+from sqlalchemy.engine import URL
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
-import re
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -15,28 +15,40 @@ if DATABASE_URL:
         if DATABASE_URL.startswith("postgres://"):
             DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
         
-        match = re.match(r'^(postgresql://)([^:]+):(.+)@(.+)$', DATABASE_URL)
-        if match:
-            scheme, user, password, rest = match.groups()
-            import urllib.parse
-            encoded_password = urllib.parse.quote(password, safe='')
-            clean_url = f"{scheme}{user}:{encoded_password}@{rest}"
+        at_idx = DATABASE_URL.rfind("@")
+        if at_idx > 0:
+            scheme_user_pass = DATABASE_URL[:at_idx]
+            host_db = DATABASE_URL[at_idx + 1:]
+            
+            scheme, rest = scheme_user_pass.split("://", 1)
+            user, password = rest.split(":", 1)
+            
+            host_db_clean = host_db.split("?")[0]
+            parts = host_db_clean.split("/")
+            host_port = parts[0]
+            dbname = parts[1] if len(parts) > 1 else "postgres"
+            
+            if ":" in host_port:
+                host, port_str = host_port.rsplit(":", 1)
+                port = int(port_str)
+            else:
+                host = host_port
+                port = 5432
+            
+            url = URL.create(
+                drivername="postgresql",
+                username=user,
+                password=password,
+                host=host,
+                port=port,
+                database=dbname
+            )
+            engine = create_engine(url, connect_args={"sslmode": "require", "connect_timeout": 10}, pool_pre_ping=True, pool_timeout=5)
         else:
-            clean_url = DATABASE_URL
+            engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require", "connect_timeout": 10}, pool_pre_ping=True, pool_timeout=5)
         
-        if "?" in clean_url:
-            base_url = clean_url.split("?")[0]
-        else:
-            base_url = clean_url
-        
-        engine = create_engine(
-            base_url,
-            connect_args={"sslmode": "require", "connect_timeout": 10},
-            pool_pre_ping=True,
-            pool_timeout=5
-        )
-        
-        SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        if engine:
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
         print(f"Database connection error: {type(e).__name__}: {e}")
         engine = None
