@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
-import urllib.parse
+import re
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -15,15 +15,26 @@ if DATABASE_URL:
         if DATABASE_URL.startswith("postgres://"):
             DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
         
-        parsed = urllib.parse.urlparse(DATABASE_URL)
-        password = parsed.password or ""
-        
-        if password and not password.startswith("%"):
+        match = re.match(r'^(postgresql://)([^:]+):(.+)@(.+)$', DATABASE_URL)
+        if match:
+            scheme, user, password, rest = match.groups()
+            import urllib.parse
             encoded_password = urllib.parse.quote(password, safe='')
-            new_url = DATABASE_URL.replace(f":{password}@", f":{encoded_password}@")
-            engine = create_engine(new_url, pool_pre_ping=True, pool_timeout=5)
+            clean_url = f"{scheme}{user}:{encoded_password}@{rest}"
         else:
-            engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_timeout=5)
+            clean_url = DATABASE_URL
+        
+        if "?" in clean_url:
+            base_url = clean_url.split("?")[0]
+        else:
+            base_url = clean_url
+        
+        engine = create_engine(
+            base_url,
+            connect_args={"sslmode": "require", "connect_timeout": 10},
+            pool_pre_ping=True,
+            pool_timeout=5
+        )
         
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
