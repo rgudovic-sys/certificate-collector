@@ -69,6 +69,7 @@ class CertificateScan(Base):
     not_after = Column(String)
     san = Column(JSON)
     key_info = Column(JSON)
+    is_wildcard = Column(Integer, default=0)
     error = Column(String, nullable=True)
     scanned_at = Column(DateTime, default=datetime.utcnow)
 

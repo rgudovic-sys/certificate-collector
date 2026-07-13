@@ -33,6 +33,7 @@ class CertificateInfo(BaseModel):
     not_after: str
     san: List[str]
     key_info: dict
+    is_wildcard: bool = False
     error: Optional[str] = None
 
 class ScanResponse(BaseModel):
@@ -46,6 +47,7 @@ class ScanResponse(BaseModel):
     not_after: str
     san: List[str]
     key_info: dict
+    is_wildcard: bool = False
     error: Optional[str] = None
     scanned_at: datetime
 
@@ -65,9 +67,11 @@ def collect_certificate(hostname: str, port: int = 443) -> CertificateInfo:
                 cert = x509.load_der_x509_certificate(cert_der)
                 
                 san_list = []
+                is_wildcard = False
                 try:
                     san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
                     san_list = san_ext.value.get_values_for_type(x509.DNSName)
+                    is_wildcard = any(san.startswith("*.") for san in san_list)
                 except x509.ExtensionNotFound:
                     pass
                 
@@ -87,7 +91,8 @@ def collect_certificate(hostname: str, port: int = 443) -> CertificateInfo:
                     not_before=cert.not_valid_before.isoformat(),
                     not_after=cert.not_valid_after.isoformat(),
                     san=san_list,
-                    key_info=key_info
+                    key_info=key_info,
+                    is_wildcard=is_wildcard
                 )
                 
     except Exception as e:
@@ -124,6 +129,7 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
                         not_after=cert_info.not_after,
                         san=cert_info.san,
                         key_info=cert_info.key_info,
+                        is_wildcard=1 if cert_info.is_wildcard else 0,
                         error=cert_info.error
                     )
                     db.add(db_scan)
@@ -141,6 +147,7 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
                         not_after=db_scan.not_after,
                         san=db_scan.san,
                         key_info=db_scan.key_info,
+                        is_wildcard=bool(db_scan.is_wildcard),
                         error=db_scan.error,
                         scanned_at=db_scan.scanned_at
                     ))
@@ -156,6 +163,7 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
                         not_after=cert_info.not_after,
                         san=cert_info.san,
                         key_info=cert_info.key_info,
+                        is_wildcard=cert_info.is_wildcard,
                         error=cert_info.error
                     ))
             else:
@@ -169,17 +177,21 @@ def get_certificates(request: HostnameRequest, db: Session = Depends(get_db)):
                     not_after=cert_info.not_after,
                     san=cert_info.san,
                     key_info=cert_info.key_info,
+                    is_wildcard=cert_info.is_wildcard,
                     error=cert_info.error
                 ))
     
     return {"certificates": results}
 
 @app.get("/api/history")
-def get_history(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
+def get_history(skip: int = 0, limit: int = 50, wildcard_only: bool = False, db: Session = Depends(get_db)):
     if not db:
         return {"scans": []}
     try:
-        scans = db.query(CertificateScan).order_by(CertificateScan.scanned_at.desc()).offset(skip).limit(limit).all()
+        query = db.query(CertificateScan)
+        if wildcard_only:
+            query = query.filter(CertificateScan.is_wildcard == 1)
+        scans = query.order_by(CertificateScan.scanned_at.desc()).offset(skip).limit(limit).all()
         return {"scans": [
             ScanResponse(
                 id=s.id,
@@ -192,6 +204,7 @@ def get_history(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
                 not_after=s.not_after,
                 san=s.san,
                 key_info=s.key_info,
+                is_wildcard=bool(s.is_wildcard),
                 error=s.error,
                 scanned_at=s.scanned_at
             ) for s in scans
