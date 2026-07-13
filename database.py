@@ -16,7 +16,7 @@ if DATABASE_URL:
         engine = create_engine(DATABASE_URL, pool_pre_ping=True)
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     except Exception as e:
-        print(f"Database connection error: {e}")
+        print(f"Database connection error: {type(e).__name__}: {e}")
         engine = None
         SessionLocal = None
 
@@ -45,12 +45,20 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as e:
+        print(f"DB session error: {type(e).__name__}: {e}")
+        yield None
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
 
 def init_db():
     if engine:
         try:
             Base.metadata.create_all(bind=engine)
         except Exception as e:
-            print(f"Init DB error: {e}")
+            print(f"Init DB error: {type(e).__name__}: {e}")
+    else:
+        print(f"Init DB: no engine (DATABASE_URL={'set' if os.getenv('DATABASE_URL') else 'not set'})")
