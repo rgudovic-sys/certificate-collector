@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import ssl
 import socket
@@ -191,4 +190,4 @@ def get_ui():
     with open("index.html", "r") as f:
         return HTMLResponse(content=f.read())
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+

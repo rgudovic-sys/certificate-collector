@@ -9,3 +9,4 @@ env/
 *.log
 data/
 *.db
+.vercel
