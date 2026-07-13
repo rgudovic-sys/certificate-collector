@@ -4,10 +4,13 @@ from sqlalchemy.orm import sessionmaker
 from datetime import datetime
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./certificates.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL) if DATABASE_URL else None
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 Base = declarative_base()
 
 class CertificateScan(Base):
@@ -27,6 +30,8 @@ class CertificateScan(Base):
     scanned_at = Column(DateTime, default=datetime.utcnow)
 
 def get_db():
+    if not SessionLocal:
+        return None
     db = SessionLocal()
     try:
         yield db
@@ -34,4 +39,5 @@ def get_db():
         db.close()
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    if engine:
+        Base.metadata.create_all(bind=engine)
