@@ -215,19 +215,3 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
 def get_ui():
     with open("index.html", "r") as f:
         return HTMLResponse(content=f.read())
-
-@app.get("/api/debug")
-def debug_db():
-    from database import engine, DATABASE_URL
-    url = DATABASE_URL or "not set"
-    masked = url[:30] + "..." if len(url) > 30 else url
-    has_engine = engine is not None
-    db_error = None
-    if engine:
-        try:
-            from sqlalchemy import text
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-        except Exception as e:
-            db_error = f"{type(e).__name__}: {e}"
-    return {"url_prefix": masked, "has_engine": has_engine, "db_error": db_error}
